@@ -69,11 +69,13 @@ x-airflow-common:
     # WARNING: Use _PIP_ADDITIONAL_REQUIREMENTS option ONLY for a quick checks
     # for other purpose (development, test and especially production usage) build/extend Airflow image.
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    INTEGRATION_MONGO: true
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -81,9 +83,12 @@ x-airflow-common:
       condition: service_healthy
     postgres:
       condition: service_healthy
+    mongodb:
+      condition: service_healthy
 
 services:
   postgres:
+    container_name: airflow-postgres
     image: postgres:13
     environment:
       POSTGRES_USER: airflow
@@ -99,7 +104,8 @@ services:
     restart: always
 
   redis:
-    image: redis:latest
+    container_name: airflow-redis
+    image: redis:7.2.4
     expose:
       - 6379
     healthcheck:
@@ -109,6 +115,24 @@ services:
       retries: 50
       start_period: 30s
     restart: always
+
+  mongodb:
+    container_name: airflow-mongo
+    image: mongo:7.0.8
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=airflow
+      - MONGO_INITDB_ROOT_USERNAME=airflow
+      - MONGO_INITDB_ROOT_PASSWORD=airflow
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    volumes:
+      - mongo-db-volume:/data/db/
+    restart: "on-failure"
 
   airflow-webserver:
     <<: *airflow-common
@@ -281,3 +305,4 @@ services:
 
 volumes:
   postgres-db-volume:
+  mongo-db-volume:
